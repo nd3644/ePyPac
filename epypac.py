@@ -64,12 +64,14 @@ class Ghost:
         self.PosY = 0
         self.Name = "Spook"
         self.Texture = None
-        self.Target = [ 0, 0 ]
+        self.Target = [ 5, 5 ]
         self.NextTile = [ 1, 0 ]
         self.CurrentDir = Direction.RIGHT
         self.LastDir = Direction.RIGHT
         self.UpdateTimer = SDL_GetTicks()
         self.DbgMode = True
+        self.MoveDelta = 40
+
 
     def Update(self):
 
@@ -89,37 +91,41 @@ class Ghost:
 
         self.UpdateTimer = SDL_GetTicks()
 
-        # Stuff to update on timeout
-        if self.CurrentDir == Direction.RIGHT and myMaze[int((py) / 8)][int((px+4) / 8)] == -1:
-            self.PosX += 1
-        elif self.CurrentDir == Direction.LEFT and myMaze[int((py) / 8)][int((px-5) / 8)] == -1:
-            self.PosX -= 1
+        if self.MoveDelta > 0:
+            self.MoveDelta -= 1
+            # Stuff to update on timeout
+            if self.CurrentDir == Direction.RIGHT:
+                self.PosX += 1
+            elif self.CurrentDir == Direction.LEFT:
+                self.PosX -= 1
+            elif self.CurrentDir == Direction.UP:
+                self.PosY -= 1
+            elif self.CurrentDir == Direction.DOWN:
+                self.PosY += 1
+        else:
+            self.MoveDelta = 8
+            aboveDist = CalcLinearDist(px, py-1, self.Target[1], self.Target[0])
+            belowDist = CalcLinearDist(px, py+1, self.Target[1], self.Target[0])
+            leftDist = CalcLinearDist(px-1, py-1, self.Target[1], self.Target[0])
+            rightDist = CalcLinearDist(px+1, py-1, self.Target[1], self.Target[0])
+#
+#            print(aboveDist)
+#            print(belowDist)
+            print(leftDist)
+            print(rightDist)
+            print("truasssse")
+            print("\n")
 
-        elif self.CurrentDir == Direction.UP and myMaze[int((py-5) / 8)][int((px) / 8)] == -1:
-            self.PosY -= 1
-        elif self.CurrentDir == Direction.DOWN and myMaze[int((py+4) / 8)][int((px) / 8)] == -1:
-            self.PosY += 1
+            if leftDist < rightDist:
+                print("c")
+                self.CurrentDir = Direction.LEFT
+            elif rightDist < leftDist:
+                print("d")
+                self.CurrentDir = Direction.RIGHT
 
-        # Check if we need to decide on another move
-        if self.PosX == self.NextTile[0] and self.PosY == self.NextTile[1]:
-            print("true")
-            lx = round((self.PosX + 8) / 8)
-            ly = round((self.PosY + 8) / 8)
+            
 
-            distAbove = CalcLinearDist((lx * 8), (ly - 1) * 8, self.Target[0] * 8, self.Target[1] * 8)
-            distBelow = CalcLinearDist((lx * 8), (ly + 1) * 8, self.Target[0] * 8, self.Target[1] * 8)
-            distLeft = CalcLinearDist(((lx-1) * 8), ly * 8, self.Target[0] * 8, self.Target[1] * 8)
-            distRight = CalcLinearDist(((lx+1) * 8), ly * 8, self.Target[0] * 8, self.Target[1] * 8)
-
-            if distAbove < distBelow and distAbove < distLeft and distAbove < distRight:
-                self.NextTile = [ 0, -1 ]
-            elif distBelow < distAbove and distBelow < distLeft and distBelow < distRight:
-                self.NextTile = [ 0, 1 ]
-            elif distLeft < distAbove and distLeft < distBelow and distLeft < distRight:
-                self.NextTile = [ -1, 0 ]
-            elif distRight < distLeft and distRight < distAbove and distRight < distBelow:
-                self.NextTile = [ 1 , 0 ]
-
+        
     def Draw(self):
         if self.Texture == None:
             self.Texture = LoadTexture(b"spook.bmp")
