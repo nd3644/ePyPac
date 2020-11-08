@@ -4,7 +4,6 @@
 
 from sdl2 import *
 from sdl2.sdlmixer import *
-from input import *
 import math
 import random
 from enum import IntEnum
@@ -104,10 +103,10 @@ class Ghost:
                 self.PosY += 1
         else:
             self.MoveDelta = 8
-            aboveDist = CalcLinearDist(px, py-1, self.Target[1], self.Target[0])
-            belowDist = CalcLinearDist(px, py+1, self.Target[1], self.Target[0])
-            leftDist = CalcLinearDist(px-1, py-1, self.Target[1], self.Target[0])
-            rightDist = CalcLinearDist(px+1, py-1, self.Target[1], self.Target[0])
+            aboveDist = CalcLinearDist(px, py-1, self.Target[0] * 8, self.Target[1] * 8)
+            belowDist = CalcLinearDist(px, py+1, self.Target[0] * 8, self.Target[1] * 8)
+            leftDist = CalcLinearDist(px-1, py, self.Target[0] * 8, self.Target[1] * 8)
+            rightDist = CalcLinearDist(px+1, py, self.Target[0] * 8, self.Target[1] * 8)
 #
 #            print(aboveDist)
 #            print(belowDist)
@@ -116,11 +115,13 @@ class Ghost:
             print("truasssse")
             print("\n")
 
-            if leftDist < rightDist:
-                print("c")
+            if aboveDist < belowDist and aboveDist < leftDist and aboveDist < rightDist:
+                self.CurrentDir = Direction.UP
+            elif leftDist < rightDist and leftDist < belowDist and leftDist < aboveDist:
                 self.CurrentDir = Direction.LEFT
-            elif rightDist < leftDist:
-                print("d")
+            elif belowDist < leftDist and belowDist < aboveDist and belowDist < rightDist:
+                self.CurrentDir = Direction.DOWN
+            elif rightDist < leftDist and rightDist < aboveDist and rightDist < belowDist:
                 self.CurrentDir = Direction.RIGHT
 
             
