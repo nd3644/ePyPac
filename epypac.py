@@ -10,6 +10,8 @@ from enum import IntEnum
 import json
 import ctypes
 
+xScale = 2
+yScale = 2
 
 class Direction(IntEnum):
     UP = 0
@@ -66,14 +68,27 @@ class Ghost:
         self.Target = [ 5, 5 ]
         self.NextTile = [ 1, 0 ]
         self.CurrentDir = Direction.RIGHT
+        self.FormerDir = Direction.LEFT
         self.LastDir = Direction.RIGHT
         self.UpdateTimer = SDL_GetTicks()
         self.DbgMode = True
-        self.MoveDelta = 40
+        self.MoveDelta = 0
+
+    def TryDirChange(self, dir):
+        px = self.PosX + 12
+        py = self.PosY + 12
+        if dir == Direction.UP and myMaze[int((py-5) / 8)][int((px) / 8)] == -1:
+            return True
+        elif dir == Direction.DOWN and myMaze[int((py+4) / 8)][int((px) / 8)] == -1:
+            return True
+        elif dir == Direction.LEFT and myMaze[int((py) / 8)][int((px-5) / 8)] == -1:
+            return True
+        elif dir == Direction.RIGHT and myMaze[int((py) / 8)][int((px+4) / 8)] == -1:
+            return True
+        return False
 
 
     def Update(self):
-
         px = self.PosX + 12
         py = self.PosY + 12
         if IsKeyTap(SDL_SCANCODE_SPACE):
@@ -102,27 +117,47 @@ class Ghost:
             elif self.CurrentDir == Direction.DOWN:
                 self.PosY += 1
         else:
-            self.MoveDelta = 8
-            aboveDist = CalcLinearDist(px, py-1, self.Target[0] * 8, self.Target[1] * 8)
-            belowDist = CalcLinearDist(px, py+1, self.Target[0] * 8, self.Target[1] * 8)
-            leftDist = CalcLinearDist(px-1, py, self.Target[0] * 8, self.Target[1] * 8)
-            rightDist = CalcLinearDist(px+1, py, self.Target[0] * 8, self.Target[1] * 8)
-#
-#            print(aboveDist)
-#            print(belowDist)
-            print(leftDist)
-            print(rightDist)
-            print("truasssse")
-            print("\n")
+#            if IsKeyTap(SDL_SCANCODE_RETURN):
+                print("???")
+                stringTrans = { Direction.LEFT: "left", Direction.RIGHT: "right", Direction.UP: "up", Direction.DOWN: "down" }
+                self.MoveDelta = 8
 
-            if aboveDist < belowDist and aboveDist < leftDist and aboveDist < rightDist:
-                self.CurrentDir = Direction.UP
-            elif leftDist < rightDist and leftDist < belowDist and leftDist < aboveDist:
-                self.CurrentDir = Direction.LEFT
-            elif belowDist < leftDist and belowDist < aboveDist and belowDist < rightDist:
-                self.CurrentDir = Direction.DOWN
-            elif rightDist < leftDist and rightDist < aboveDist and rightDist < belowDist:
-                self.CurrentDir = Direction.RIGHT
+                aboveDist = CalcLinearDist(px, py-1, self.Target[0] * 8, self.Target[1] * 8)
+                belowDist = CalcLinearDist(px, py+1, self.Target[0] * 8, self.Target[1] * 8)
+                leftDist = CalcLinearDist(px-1, py, self.Target[0] * 8, self.Target[1] * 8)
+                rightDist = CalcLinearDist(px+1, py, self.Target[0] * 8, self.Target[1] * 8)
+
+                Distances = { Direction.LEFT: leftDist, Direction.RIGHT: rightDist, Direction.UP: aboveDist, Direction.DOWN: belowDist }
+                if self.CurrentDir == Direction.UP:
+                    Distances.pop(Direction.DOWN)
+                elif self.CurrentDir == Direction.DOWN:
+                    Distances.pop(Direction.UP)
+                elif self.CurrentDir == Direction.LEFT:
+                    Distances.pop(Direction.RIGHT)
+                elif self.CurrentDir == Direction.RIGHT:
+                    Distances.pop(Direction.LEFT)
+                print(f"popping {stringTrans[self.FormerDir]}")
+
+                DistancesCopy = Distances.copy()
+                # remove directions that lead to walls
+                i = 0
+                for key in DistancesCopy:
+                    i += 1
+                    if self.TryDirChange(key) == False:
+                        print(f"can't go {stringTrans[key]}")
+                        Distances.pop(key)
+
+                first = True
+                lowestDist = 0
+                for key in Distances:
+                    if Distances[key] < lowestDist or first == True:
+                        lowestDist = Distances[key]
+                        lowestKey = key
+                        first = False
+                
+                print(f"move should be: {stringTrans[lowestKey]}")
+
+                self.CurrentDir = lowestKey
 
             
 
@@ -140,6 +175,10 @@ class Ghost:
         if self.DbgMode == True:
             SDL_SetRenderDrawColor(myRenderer, 0, 255, 0, 255)
             SDL_RenderDrawPoint(myRenderer, (self.Target[0] * 8) + 4, (self.Target[1] * 8) + 4)
+            SDL_RenderDrawPoint(myRenderer, (self.Target[0] * 8) + 3, (self.Target[1] * 8) + 4)
+            SDL_RenderDrawPoint(myRenderer, (self.Target[0] * 8) + 5, (self.Target[1] * 8) + 4)
+            SDL_RenderDrawPoint(myRenderer, (self.Target[0] * 8) + 4, (self.Target[1] * 8) + 3)
+            SDL_RenderDrawPoint(myRenderer, (self.Target[0] * 8) + 4, (self.Target[1] * 8) + 5)
 
 class Player:
     def __init__(self):
@@ -324,7 +363,7 @@ if SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0:
 Mix_OpenAudio(44100, AUDIO_S16SYS, 2, 512)
 mySounds["chomp"] = Mix_LoadWAV(b"munch_1.wav")
 
-myWindow = SDL_CreateWindow(b"HelloPy", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 224*1, 248*1, SDL_WINDOW_SHOWN)
+myWindow = SDL_CreateWindow(b"HelloPy", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 224*xScale, 248*yScale, SDL_WINDOW_SHOWN)
 if myWindow == None:
 	print("failed SDL_CreateWindow")
 
@@ -334,7 +373,7 @@ if myRenderer == None:
 
 error = SDL_GetError()
 print(error)
-SDL_RenderSetScale(myRenderer, 1, 1)
+SDL_RenderSetScale(myRenderer, xScale, yScale)
 
 myEvent = SDL_Event()
 
