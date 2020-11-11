@@ -1,9 +1,8 @@
 # Pac-man - Nicole Durrant 2020
-# Graphics - https://www.spriters-resource.com/arcade/pacman/ - Thank you, Superjustinbros
-# Sounds - https://www.classicgaming.cc/classics/pac-man/sounds
 
 from sdl2 import *
 from sdl2.sdlmixer import *
+from sdl2.sdlttf import *
 import math
 import random
 from enum import IntEnum
@@ -12,6 +11,7 @@ import ctypes
 
 xScale = 2
 yScale = 2
+HUD_HEIGHT = 24
 
 class Direction(IntEnum):
     UP = 0
@@ -23,6 +23,7 @@ def LoadTexture(filename):
     surf = SDL_LoadBMP(filename)
     if surf == None:
         print(f"couldn't load {filename}")
+    SDL_SetColorKey(surf, SDL_TRUE, 0)
     tex = SDL_CreateTextureFromSurface(myRenderer, surf)
     SDL_FreeSurface(surf)
     return tex
@@ -44,6 +45,13 @@ def DirectionToVec(dir):
         vec = [ 1, 0 ]
     return vec
 
+def Clamp(i, min, max):
+    if i < min:
+        i = min
+    elif i > max:
+        i = max
+    return int(i)
+
 
 # The game should be split into 3 states
 # TITLE is just the title screen
@@ -51,35 +59,48 @@ def DirectionToVec(dir):
 # EDIT is for editing the maze and pellets etc
 class GameState(IntEnum):
         STATE_TITLE = 0
-        STATE_GAME = 1
-        STATE_EDIT = 2
+        STATE_STARTING = 1
+        STATE_GAME = 2
+        STATE_EDIT = 3
 
 myGameState = GameState.STATE_TITLE
-mySounds = { "chomp": None }
+mySounds = { }
 myKeyStates = [False] * 255
 myFormerKeyStates = [False] * 255
 
+class GhostState(IntEnum):
+    STATE_SCATTER = 0
+    STATE_CHASE = 1
+    STATE_FRIGHTENED = 2
+    STATE_INHOUSE = 3
+
 class Ghost:
     def __init__(self):
+        self.Reset()
+
+    def Reset(self):
         self.PosX = 0
         self.PosY = 0
         self.Name = "Spook"
         self.Texture = None
         self.Target = [ 5, 5 ]
+        self.ScatterTarget = [ 0, 0 ]
         self.NextTile = [ 1, 0 ]
         self.CurrentDir = Direction.RIGHT
         self.FormerDir = Direction.LEFT
         self.LastDir = Direction.RIGHT
         self.UpdateTimer = SDL_GetTicks()
-        self.DbgMode = True
+        self.DbgMode = False
         self.MoveDelta = 0
+        self.State = GhostState.STATE_CHASE
 
     def TryDirChange(self, dir):
         px = self.PosX + 12
         py = self.PosY + 12
-        if dir == Direction.UP and myMaze[int((py-5) / 8)][int((px) / 8)] == -1:
+        # 12 is the exception for the ghost house- This needs fixing
+        if dir == Direction.UP and myMaze[int((py-5) / 8)][int((px) / 8)] == -1 or myMaze[int((py-5) / 8)][int((px) / 8)] == 12:
             return True
-        elif dir == Direction.DOWN and myMaze[int((py+4) / 8)][int((px) / 8)] == -1:
+        elif dir == Direction.DOWN and myMaze[int((py+5) / 8)][int((px) / 8)] == -1:
             return True
         elif dir == Direction.LEFT and myMaze[int((py) / 8)][int((px-5) / 8)] == -1:
             return True
@@ -87,23 +108,36 @@ class Ghost:
             return True
         return False
 
-
-    def Update(self):
+    def UpdateHouseTarget(self):
         px = self.PosX + 12
         py = self.PosY + 12
-        if IsKeyTap(SDL_SCANCODE_SPACE):
-            done = False
-            while done == False:
-                self.Target = [random.randint(0, MazeWidth-1), random.randint(0, MazeHeight-1)]
-                x = self.Target[0]
-                y = self.Target[1]
-                if myMaze[y][x] == -1:
-                    done = True
+        if px / 8 > 10 and py / 8 > 12 and px / 8 < 17 and py / 8 < 16:
+            self.Target[0] = 13
+            self.Target[1] = 11
+
+
+    def Update(self):
+        return
+        if myGameState != GameState.STATE_GAME:
+            return
+
+        px = self.PosX + 12
+        py = self.PosY + 12
+        if IsKeyDown(SDL_SCANCODE_SPACE):
+            if IsKeyTap(SDL_SCANCODE_A):
+                self.Target[0] -= 1
+            if IsKeyTap(SDL_SCANCODE_D):
+                self.Target[0] += 1
+            if IsKeyTap(SDL_SCANCODE_W):
+                self.Target[1] -= 1
+            if IsKeyTap(SDL_SCANCODE_S):
+                self.Target[1] += 1
 
         if SDL_GetTicks() - self.UpdateTimer < 20:
             return
 
         self.UpdateTimer = SDL_GetTicks()
+
 
         if self.MoveDelta > 0:
             self.MoveDelta -= 1
@@ -118,7 +152,6 @@ class Ghost:
                 self.PosY += 1
         else:
 #            if IsKeyTap(SDL_SCANCODE_RETURN):
-                print("???")
                 stringTrans = { Direction.LEFT: "left", Direction.RIGHT: "right", Direction.UP: "up", Direction.DOWN: "down" }
                 self.MoveDelta = 8
 
@@ -156,7 +189,6 @@ class Ghost:
                         first = False
                 
                 print(f"move should be: {stringTrans[lowestKey]}")
-
                 self.CurrentDir = lowestKey
 
             
@@ -169,26 +201,182 @@ class Ghost:
         cropMap = { None: 0, Direction.UP: 0, Direction.DOWN: 16, Direction.LEFT: 32, Direction.RIGHT: 48 }
         c = SDL_Rect(0,cropMap[self.CurrentDir],16,16)
         r = SDL_Rect(self.PosX + 4, self.PosY + 4, 16,16)
+        r.y += HUD_HEIGHT
         SDL_RenderCopy(myRenderer, self.Texture, c, r)
+
+        SDL_RenderDrawPoint(myRenderer, self.PosX + 12, self.PosY + 12 + HUD_HEIGHT)
 
 
         if self.DbgMode == True:
             SDL_SetRenderDrawColor(myRenderer, 0, 255, 0, 255)
-            SDL_RenderDrawPoint(myRenderer, (self.Target[0] * 8) + 4, (self.Target[1] * 8) + 4)
-            SDL_RenderDrawPoint(myRenderer, (self.Target[0] * 8) + 3, (self.Target[1] * 8) + 4)
-            SDL_RenderDrawPoint(myRenderer, (self.Target[0] * 8) + 5, (self.Target[1] * 8) + 4)
-            SDL_RenderDrawPoint(myRenderer, (self.Target[0] * 8) + 4, (self.Target[1] * 8) + 3)
-            SDL_RenderDrawPoint(myRenderer, (self.Target[0] * 8) + 4, (self.Target[1] * 8) + 5)
+            SDL_RenderDrawPoint(myRenderer, (self.Target[0] * 8) + 4, (self.Target[1] * 8) + 4 + HUD_HEIGHT)
+            SDL_RenderDrawPoint(myRenderer, (self.Target[0] * 8) + 3, (self.Target[1] * 8) + 4 + HUD_HEIGHT)
+            SDL_RenderDrawPoint(myRenderer, (self.Target[0] * 8) + 5, (self.Target[1] * 8) + 4 + HUD_HEIGHT)
+            SDL_RenderDrawPoint(myRenderer, (self.Target[0] * 8) + 4, (self.Target[1] * 8) + 3 + HUD_HEIGHT)
+            SDL_RenderDrawPoint(myRenderer, (self.Target[0] * 8) + 4, (self.Target[1] * 8) + 5 + HUD_HEIGHT)
+
+
+class Blinky(Ghost):
+    def __init__(self):
+        super().__init__()
+
+    def Reset(self):
+        super().Reset()
+        self.ScatterTarget[0] = 27
+        self.ScatterTarget[1] = 0
+        self.PosX = (13 * 8)
+        self.PosY = 10 * 8
+
+    def Draw(self):
+        if self.Texture == None:
+            self.Texture = LoadTexture(b"blinky.bmp")
+        super().Draw()
+
+    def Update(self):
+        super().Update()
+
+        if self.State == GhostState.STATE_CHASE:
+            self.Target[0] = int((myPlayer.PosX + 8) / 8)
+            self.Target[1] = int((myPlayer.PosY + 8) / 8)
+        elif self.State == GhostState.STATE_SCATTER:
+            self.Target[0] = 27
+            self.Target[1] = 0
+
+        self.UpdateHouseTarget()
+
+class Pinky(Ghost):
+    def __init__(self):
+        super().__init__()
+    
+    def Reset(self):
+        super().Reset()
+        self.PosX = (13 * 8)
+        self.PosY = 13 * 8
+        self.ScatterTarget[0] = 27
+        self.ScatterTarget[1] = 0
+
+    def Draw(self):
+        if self.Texture == None:
+            self.Texture = LoadTexture(b"pinky.bmp")
+        super().Draw()
+
+    def Update(self):
+        super().Update()
+
+        if self.State == GhostState.STATE_CHASE:
+            vec = DirectionToVec(myPlayer.CurrentDir)
+            vec[0] *= 4
+            vec[1] *= 4
+
+            self.Target[0] = int((myPlayer.PosX + 8) / 8)
+            self.Target[1] = int((myPlayer.PosY + 8) / 8)
+
+            self.Target[0] += vec[0]
+            self.Target[1] += vec[1]
+
+        elif self.State == GhostState.STATE_SCATTER:
+            self.Target[0] = 0
+            self.Target[1] = 0
+
+        self.UpdateHouseTarget()
+class Inky(Ghost):
+    def __init__(self):
+        super().__init__()
+        self.PosX = (11 * 8)
+        self.PosY = 13 * 8
+        self.ScatterTarget[0] = 27
+        self.ScatterTarget[1] = 0
+
+    def Draw(self):
+        if self.Texture == None:
+            self.Texture = LoadTexture(b"inky.bmp")
+        super().Draw()
+
+    def Update(self):
+        super().Update()
+
+        if self.State == GhostState.STATE_CHASE:
+            
+            # First, get the tile 2 ahead of pac-man
+            vec = DirectionToVec(myPlayer.CurrentDir)
+            vec[0] *= 4
+            vec[1] *= 4
+
+            self.Target[0] = int((myPlayer.PosX + 8) / 8)
+            self.Target[1] = int((myPlayer.PosY + 8) / 8)
+
+            self.Target[0] += vec[0]
+            self.Target[1] += vec[1]
+
+            # Get the distance between the target tile and Blinky
+            distX = self.Target[0] - (myGhosts["blinky"].PosX / 8)
+            distY = self.Target[0] - (myGhosts["blinky"].PosY / 8)
+
+            self.Target[0] -= int(distX)
+            self.Target[1] -= int(distY)
+
+
+        elif self.State == GhostState.STATE_SCATTER:
+            self.Target[0] = 27
+            self.Target[1] = 30
+
+        self.UpdateHouseTarget()
+
+class Clyde(Ghost):
+    def __init__(self):
+        super().__init__()
+
+    def Reset(self):
+        super().Reset()
+        self.PosX = (15 * 8)
+        self.PosY = 13 * 8
+        self.ScatterTarget[0] = 27
+        self.ScatterTarget[1] = 0
+
+    def Draw(self):
+        if self.Texture == None:
+            self.Texture = LoadTexture(b"clyde.bmp")
+        super().Draw()
+
+    def Update(self):
+        super().Update()
+
+        if self.State == GhostState.STATE_CHASE:
+            vec = DirectionToVec(myPlayer.CurrentDir)
+            vec[0] *= 4
+            vec[1] *= 4
+
+            self.Target[0] = int((myPlayer.PosX + 8) / 8)
+            self.Target[1] = int((myPlayer.PosY + 8) / 8)
+
+        elif self.State == GhostState.STATE_SCATTER:
+            self.Target[0] = 0
+            self.Target[1] = 30
+        
+        self.UpdateHouseTarget()
+
+myGhosts = { "blinky": Blinky(), "inky": Inky(), "pinky": Pinky(), "clyde": Clyde() }
+
+def ResetGame():
+    myPlayer.Reset()
+    for k in myGhosts:
+        myGhosts[k].Reset()
+
+    LoadMaze()
 
 class Player:
     def __init__(self):
-        self.PosX = 0
-        self.PosY = 0
+        self.Reset()
+
+    def Reset(self):
+        self.PosX = (13 * 8)-4
+        self.PosY = 16 * 8
         self.CurrentDir = None
         self.UpdateTimer = SDL_GetTicks()
         self.AnimTimer = SDL_GetTicks()
         self.CurrentFrame = 0
         self.bMoving = False
+        self.NumLives = 5
 
     def Draw(self):
         r = SDL_Rect(self.PosX + 4, self.PosY + 4, 16, 16)
@@ -196,9 +384,11 @@ class Player:
         cropMap = { None: 0, Direction.UP: 0, Direction.DOWN: 16, Direction.LEFT: 32, Direction.RIGHT: 48 }
         crop.x = self.CurrentFrame * 16
         crop.y = cropMap[self.CurrentDir]
+
+        r.y += HUD_HEIGHT
         SDL_RenderCopy(myRenderer, playerTex, crop, r)
 
-        if SDL_GetTicks() - self.AnimTimer < 100:
+        if SDL_GetTicks() - self.AnimTimer < 60 or self.CurrentDir == None:
             return
 
         self.AnimTimer = SDL_GetTicks()
@@ -208,6 +398,8 @@ class Player:
             self.CurrentFrame += 1
 
     def Update(self):
+        if myGameState != GameState.STATE_GAME:
+            return
         # center positions for array indexing
         py = self.PosY + 12
         px = self.PosX + 12
@@ -216,9 +408,9 @@ class Player:
         roundedY = (self.PosY == (round(self.PosY / 8) * 8))
 
     	# Update every frame here ...
-        if IsKeyDown(SDL_SCANCODE_LEFT) and roundedY == True and myMaze[int((py) / 8)][int((px-5) / 8)] == -1:
+        if IsKeyDown(SDL_SCANCODE_LEFT) and roundedY == True and myMaze[int((py) / 8)][Clamp(int((px-5) / 8), 0 + 4, MazeWidth-1)] == -1:
             self.CurrentDir = Direction.LEFT
-        elif IsKeyDown(SDL_SCANCODE_RIGHT)  and roundedY == True and myMaze[int((py) / 8)][int((px+4) / 8)] == -1:
+        elif IsKeyDown(SDL_SCANCODE_RIGHT)  and roundedY == True and myMaze[int((py) / 8)][Clamp(int((px+4) / 8), 0, MazeWidth-4)] == -1:
             self.CurrentDir = Direction.RIGHT
         elif IsKeyDown(SDL_SCANCODE_UP) and roundedX == True and myMaze[int((py-5) / 8)][int((px) / 8)] == -1:
             self.CurrentDir = Direction.UP
@@ -231,10 +423,17 @@ class Player:
 
         # Update on timeout here ...
         self.bMoving = True
-        if self.CurrentDir == Direction.RIGHT and myMaze[int((py) / 8)][int((px+4) / 8)] == -1:
+        a = Clamp(int((px+4) / 8), 0, MazeWidth-1)
+        b = (px+4) / 8
+#        print(f"{a}, {b}")
+        if self.CurrentDir == Direction.RIGHT and myMaze[int((py) / 8)][Clamp(int((px+4) / 8), 0, MazeWidth-1)] == -1:
             self.PosX += 1
-        elif self.CurrentDir == Direction.LEFT and myMaze[int((py) / 8)][int((px-5) / 8)] == -1:
+            if self.PosX / 8 > MazeWidth:
+                self.PosX = -8
+        elif self.CurrentDir == Direction.LEFT and myMaze[int((py) / 8)][Clamp(int((px-5) / 8), 0, MazeWidth-1)] == -1:
             self.PosX -= 1
+            if self.PosX < -16:
+                self.PosX = 208
 
         elif self.CurrentDir == Direction.UP and myMaze[int((py-5) / 8)][int((px) / 8)] == -1:
             self.PosY -= 1
@@ -247,12 +446,18 @@ class Player:
         lx = round((self.PosX + 8) / 8)
         ly = round((self.PosY + 8) / 8)
 #        print(f"{lx}, {ly}")
-        if arr[ly][lx] != 0:
-            arr[ly][lx] = 0
-            Mix_PlayChannel(-1, mySounds["chomp"], 0)
+#        if arr[ly][lx] != 0:
+#            arr[ly][lx] = 0
+#            Mix_PlayChannel(-1, mySounds["chomp"], 0)
+
+        for k in myGhosts:
+            gX = myGhosts[k].PosX
+            gY = myGhosts[k].PosY
+
+            if self.PosX + 16 > gX and self.PosX < gX + 16 and self.PosY + 16 > gY and self.PosY < gY + 16:
+                ResetGame()
 
 myPlayer = Player()
-Spook = Ghost()
 
 def PollKeyboard():
     keys = SDL_GetKeyboardState(None)
@@ -282,7 +487,8 @@ def CheckInputs():
     iMouseY = ctypes.c_int()
     SDL_GetMouseState(ctypes.byref(iMouseX), ctypes.byref(iMouseY))
     EditCursorX = round(iMouseX.value / 8)
-    EditCursorY = round(iMouseY.value / 8)
+    print(f"POS- {EditCursorX}, {EditCursorY}")
+    EditCursorY = round((iMouseY.value) / 8)
     if myGameState == GameState.STATE_EDIT:
         if IsKeyTap(SDL_SCANCODE_A):
             EditCursorX -= 1
@@ -360,10 +566,15 @@ def SaveMaze():
 if SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0:
 	print("failed SDL_Init")
 
+TTF_Init()
+
 Mix_OpenAudio(44100, AUDIO_S16SYS, 2, 512)
 mySounds["chomp"] = Mix_LoadWAV(b"munch_1.wav")
+mySounds["start"] = Mix_LoadMUS(b"game_start.wav")
+mySounds["death1"] = Mix_LoadMUS(b"death_1.wav")
 
-myWindow = SDL_CreateWindow(b"HelloPy", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 224*xScale, 248*yScale, SDL_WINDOW_SHOWN)
+#myWindow = SDL_CreateWindow(b"HelloPy", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 244*xScale, 288*yScale, SDL_WINDOW_SHOWN)
+myWindow = SDL_CreateWindow(b"HelloPy", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 224*xScale, (248+HUD_HEIGHT + 16)*yScale, SDL_WINDOW_SHOWN)
 if myWindow == None:
 	print("failed SDL_CreateWindow")
 
@@ -392,14 +603,48 @@ playerSurf = SDL_LoadBMP(b"pacman.bmp")
 if playerSurf == None:
     print("failed to load pacman.bmp")
 
+myFont = TTF_OpenFont(b"PressStart2P.ttf", 8)
+if myFont == None:
+    print("couldn't open font")
+
 #playerTex = SDL_CreateTextureFromSurface(myRenderer, playerSurf)
 #SDL_SetTextureBlendMode(playerTex, SDL_BLENDMODE_BLEND)
 playerTex = LoadTexture(b"pacman.bmp")
 
-MazeWidth = 28
-MazeHeight = 31
+MazeWidth = 27
+MazeHeight = 30
 arr = x = [[0 for i in range(MazeWidth)] for j in range(MazeHeight)] 
 myMaze = [[0 for i in range(MazeWidth)] for j in range (MazeHeight)]
+
+def DrawString(str, x, y):
+    color = SDL_Color(255,255,255)
+    color.r = 255
+    color.g = 255
+    color.b = 255
+    color.a = 255
+    surf = TTF_RenderText_Solid(myFont, str, color)
+    texture = SDL_CreateTextureFromSurface(myRenderer, surf)
+
+    Width = ctypes.c_int32()
+    Height = ctypes.c_int32()
+    SDL_QueryTexture(texture, None, None, ctypes.byref(Width), ctypes.byref(Height))
+
+    r = SDL_Rect(x, y, Width, Height)
+    SDL_RenderCopy(myRenderer, texture, None, r)
+    
+    SDL_DestroyTexture(texture)
+    SDL_FreeSurface(surf)
+
+def DrawHud():
+    DrawString(b"1UP", 16, 0)
+    DrawString(b"HIGH SCORE", 74, 0)
+    DrawString(b"2UP", 176, 0)
+
+    for i in range(4):
+        r = SDL_Rect((i * 16) + 16, 272, 16, 16)
+        c = SDL_Rect(16,Direction.LEFT * 16,16,16)
+        SDL_RenderCopy(myRenderer, playerTex, c, r)
+
 
 def DrawMaze():
     global myGameState
@@ -416,6 +661,7 @@ def DrawMaze():
 
                 crop = SDL_Rect(int(cropX),int(cropY),8,8)
                 rect = SDL_Rect(posX, posY, 8, 8)
+                rect.y += HUD_HEIGHT
                 SDL_RenderCopy(myRenderer, tilesTex, crop, rect)
 
                 SDL_SetRenderDrawColor(myRenderer, 0, 0, 255, 255)
@@ -424,7 +670,7 @@ def DrawMaze():
     if myGameState == GameState.STATE_EDIT:
         posX = EditCursorX * 8
         posY = EditCursorY * 8
-        r = SDL_Rect(posX, posY, 8, 8)
+        r = SDL_Rect(posX, posY + HUD_HEIGHT, 8, 8)
 
         SDL_SetRenderDrawColor(myRenderer, 0, 0, 255, 255)
         SDL_RenderDrawRect(myRenderer, r)
@@ -448,23 +694,35 @@ while done == False:
     if myKeyStates[SDL_SCANCODE_ESCAPE] == True:
         done = True
 
+    if IsKeyTap(SDL_SCANCODE_SPACE):
+        myGameState = GameState.STATE_STARTING
+#        Mix_PlayMusic(mySounds["start"], 0)
+
+    if myGameState == GameState.STATE_STARTING and Mix_PlayingMusic() == False:
+        myGameState = GameState.STATE_GAME
+
     DrawMaze()
     for x in range(28):
         for y in range(31):
             id = arr[y][x]
+            posX = x * 8
+            posY = y * 8
             if id == 1:
-                
-                posX = x * 8
-                posY = y * 8
                 SDL_SetRenderDrawColor(myRenderer,255, 255, 255, 255)
-                SDL_RenderDrawPoint(myRenderer, posX + 3, posY + 3)
+                SDL_RenderDrawPoint(myRenderer, posX + 3, posY + 3 + HUD_HEIGHT)
+            elif id == 2:
+                r = SDL_Rect(posX + 2, posY + 2 + HUD_HEIGHT, 4, 4)
+                SDL_SetRenderDrawColor(myRenderer,255, 255, 255, 255)
+                SDL_RenderDrawRect(myRenderer, r)
     
     myPlayer.Update()
     myPlayer.Draw()
 
-    # TODO: move these
-    Spook.Draw()
-    Spook.Update()
+    for k in myGhosts:
+        myGhosts[k].Draw()
+        myGhosts[k].Update()
+
+    DrawHud()
 
     SDL_RenderPresent(myRenderer)
     
