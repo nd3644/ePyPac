@@ -83,6 +83,7 @@ class Ghost:
         self.PosY = 0
         self.Name = "Spook"
         self.Texture = None
+        self.EyesTex = None
         self.Target = [ 5, 5 ]
         self.ScatterTarget = [ 0, 0 ]
         self.NextTile = [ 1, 0 ]
@@ -90,9 +91,9 @@ class Ghost:
         self.FormerDir = Direction.LEFT
         self.LastDir = Direction.RIGHT
         self.UpdateTimer = SDL_GetTicks()
-        self.DbgMode = False
+        self.DbgMode = True
         self.MoveDelta = 0
-        self.State = GhostState.STATE_CHASE
+        self.State = GhostState.STATE_FRIGHTENED
 
     def TryDirChange(self, dir):
         px = self.PosX + 12
@@ -100,32 +101,42 @@ class Ghost:
         # 12 is the exception for the ghost house- This needs fixing
         if dir == Direction.UP and myMaze[int((py-5) / 8)][int((px) / 8)] == -1 or myMaze[int((py-5) / 8)][int((px) / 8)] == 12:
             return True
-        elif dir == Direction.DOWN and myMaze[int((py+5) / 8)][int((px) / 8)] == -1:
+        elif dir == Direction.DOWN and myMaze[int((py+5) / 8)][int((px) / 8)] == -1 or myMaze[int((py+4) / 8)][int((px) / 8)] == 12:
             return True
-        elif dir == Direction.LEFT and myMaze[int((py) / 8)][int((px-5) / 8)] == -1:
+        elif dir == Direction.LEFT and myMaze[int((py) / 8)][int((px-5) / 8)] == -1 or myMaze[int((py) / 8)][int((px-4) / 8)] == 12:
             return True
-        elif dir == Direction.RIGHT and myMaze[int((py) / 8)][int((px+4) / 8)] == -1:
+        elif dir == Direction.RIGHT and myMaze[int((py) / 8)][int((px+4) / 8)] == -1 or myMaze[int((py-5) / 8)][int((px+4) / 8)] == 12:
             return True
         return False
 
     def UpdateHouseTarget(self):
         px = self.PosX + 12
         py = self.PosY + 12
-        if px / 8 > 10 and py / 8 > 12 and px / 8 < 17 and py / 8 < 16:
+        if px / 8 > 11 and py / 8 > 12 and px / 8 < 16 and py / 8 < 16:
             self.Target[0] = 13
             self.Target[1] = 11
+            print("this condition is passed")
 
 
     def Update(self):
-        return
         if myGameState != GameState.STATE_GAME:
             return
 
+        if self.State == GhostState.STATE_FRIGHTENED:
+            self.Target[0] = 13
+            self.Target[1] = 14
+
+            if round((self.PosX + 12) / 8) == self.Target[0] and round((self.PosY + 12) / 8) == self.Target[1]:
+                self.State = GhostState.STATE_SCATTER
+                print("true????")
+
+
+        #
         px = self.PosX + 12
         py = self.PosY + 12
         if IsKeyDown(SDL_SCANCODE_SPACE):
             if IsKeyTap(SDL_SCANCODE_A):
-                self.Target[0] -= 1
+                self.State = GhostState.STATE_FRIGHTENED
             if IsKeyTap(SDL_SCANCODE_D):
                 self.Target[0] += 1
             if IsKeyTap(SDL_SCANCODE_W):
@@ -133,11 +144,17 @@ class Ghost:
             if IsKeyTap(SDL_SCANCODE_S):
                 self.Target[1] += 1
 
-        if SDL_GetTicks() - self.UpdateTimer < 20:
+
+        # 
+
+        UpdateDelta = 20
+        if self.State == GhostState.STATE_FRIGHTENED:
+            UpdateDelta = 10
+            
+        if SDL_GetTicks() - self.UpdateTimer < UpdateDelta:
             return
 
         self.UpdateTimer = SDL_GetTicks()
-
 
         if self.MoveDelta > 0:
             self.MoveDelta -= 1
@@ -191,18 +208,24 @@ class Ghost:
                 print(f"move should be: {stringTrans[lowestKey]}")
                 self.CurrentDir = lowestKey
 
-            
 
         
     def Draw(self):
         if self.Texture == None:
             self.Texture = LoadTexture(b"spook.bmp")
 
+        if self.EyesTex == None:
+            self.EyesTex = LoadTexture(b"eyes.bmp")
+
         cropMap = { None: 0, Direction.UP: 0, Direction.DOWN: 16, Direction.LEFT: 32, Direction.RIGHT: 48 }
         c = SDL_Rect(0,cropMap[self.CurrentDir],16,16)
         r = SDL_Rect(self.PosX + 4, self.PosY + 4, 16,16)
         r.y += HUD_HEIGHT
-        SDL_RenderCopy(myRenderer, self.Texture, c, r)
+
+        if self.State == GhostState.STATE_FRIGHTENED:
+            SDL_RenderCopy(myRenderer, self.EyesTex, c, r)
+        else:
+            SDL_RenderCopy(myRenderer, self.Texture, c, r)
 
         SDL_RenderDrawPoint(myRenderer, self.PosX + 12, self.PosY + 12 + HUD_HEIGHT)
 
@@ -282,7 +305,7 @@ class Pinky(Ghost):
 class Inky(Ghost):
     def __init__(self):
         super().__init__()
-        self.PosX = (11 * 8)
+        self.PosX = (10 * 8)
         self.PosY = 13 * 8
         self.ScatterTarget[0] = 27
         self.ScatterTarget[1] = 0
@@ -408,9 +431,9 @@ class Player:
         roundedY = (self.PosY == (round(self.PosY / 8) * 8))
 
     	# Update every frame here ...
-        if IsKeyDown(SDL_SCANCODE_LEFT) and roundedY == True and myMaze[int((py) / 8)][Clamp(int((px-5) / 8), 0 + 4, MazeWidth-1)] == -1:
+        if IsKeyDown(SDL_SCANCODE_LEFT) and roundedY == True and myMaze[int((py) / 8)][Clamp(int((px-5) / 8), 0, MazeWidth-1)] == -1:
             self.CurrentDir = Direction.LEFT
-        elif IsKeyDown(SDL_SCANCODE_RIGHT)  and roundedY == True and myMaze[int((py) / 8)][Clamp(int((px+4) / 8), 0, MazeWidth-4)] == -1:
+        elif IsKeyDown(SDL_SCANCODE_RIGHT)  and roundedY == True and myMaze[int((py) / 8)][Clamp(int((px+4) / 8), 0, MazeWidth-1)] == -1:
             self.CurrentDir = Direction.RIGHT
         elif IsKeyDown(SDL_SCANCODE_UP) and roundedX == True and myMaze[int((py-5) / 8)][int((px) / 8)] == -1:
             self.CurrentDir = Direction.UP
@@ -425,7 +448,7 @@ class Player:
         self.bMoving = True
         a = Clamp(int((px+4) / 8), 0, MazeWidth-1)
         b = (px+4) / 8
-#        print(f"{a}, {b}")
+        print(f"{a}, {b}")
         if self.CurrentDir == Direction.RIGHT and myMaze[int((py) / 8)][Clamp(int((px+4) / 8), 0, MazeWidth-1)] == -1:
             self.PosX += 1
             if self.PosX / 8 > MazeWidth:
@@ -719,8 +742,8 @@ while done == False:
     myPlayer.Draw()
 
     for k in myGhosts:
-        myGhosts[k].Draw()
-        myGhosts[k].Update()
+            myGhosts[k].Draw()
+            myGhosts[k].Update()
 
     DrawHud()
 
