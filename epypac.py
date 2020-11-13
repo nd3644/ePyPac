@@ -13,6 +13,15 @@ xScale = 2
 yScale = 2
 HUD_HEIGHT = 24
 
+'''
+Each round, the player is given four Scatter mode breaks. The first one begins
+at the beginning of the round. After each Scatter mode, there is a 20-second
+Attack mode for the ghosts. The first two Scatter modes are seven seconds long,
+and the second two Scatter modes are five seconds long. After the last Scatter
+mode, the ghosts will constantly attack until Pac-Man advances to the next
+round or loses a life to a ghost.
+'''
+
 class Direction(IntEnum):
     UP = 0
     DOWN = 1
@@ -52,6 +61,28 @@ def Clamp(i, min, max):
         i = max
     return int(i)
 
+def IndexArr(y, x):
+    if x >= 28:
+        return -1
+    elif x < 0:
+        return -1
+    if y >= MazeHeight:
+        return -1
+    elif y < 0:
+        return -1
+    if y == 14 and x == 27:
+        return -1
+    return myMaze[y][x]
+
+
+def CountFood():
+    count = 0
+    for i in range(0, MazeWidth):
+        for j in range(0, MazeHeight):
+            if arr[j][i] != 0:
+                count += 1
+
+    return count
 
 # The game should be split into 3 states
 # TITLE is just the title screen
@@ -93,29 +124,32 @@ class Ghost:
         self.UpdateTimer = SDL_GetTicks()
         self.DbgMode = True
         self.MoveDelta = 0
-        self.State = GhostState.STATE_FRIGHTENED
+        self.State = GhostState.STATE_SCATTER
 
     def TryDirChange(self, dir):
+        # The way the ghosts change direction has become a little more complicated that it had to be.
+        # The fence tile should be considered an exception when checking for adjacent walls,
+        # but only when *leaving* the ghost house, otherwise we can consider an exception when the ghosts are dead
+        # and returning to respawn
         px = self.PosX + 12
         py = self.PosY + 12
         # 12 is the exception for the ghost house- This needs fixing
         if dir == Direction.UP and myMaze[int((py-5) / 8)][int((px) / 8)] == -1 or myMaze[int((py-5) / 8)][int((px) / 8)] == 12:
             return True
-        elif dir == Direction.DOWN and myMaze[int((py+5) / 8)][int((px) / 8)] == -1 or myMaze[int((py+4) / 8)][int((px) / 8)] == 12:
+        elif dir == Direction.DOWN and myMaze[int((py+5) / 8)][int((px) / 8)] == -1 or (myMaze[int((py+4) / 8)][int((px) / 8)] == 12 and self.State == GhostState.STATE_FRIGHTENED):
             return True
-        elif dir == Direction.LEFT and myMaze[int((py) / 8)][int((px-5) / 8)] == -1 or myMaze[int((py) / 8)][int((px-4) / 8)] == 12:
+        elif dir == Direction.LEFT and myMaze[int((py) / 8)][int((px-5) / 8)] == -1 or (myMaze[int((py) / 8)][int((px-4) / 8)] == 12 and self.State == GhostState.STATE_FRIGHTENED):
             return True
-        elif dir == Direction.RIGHT and myMaze[int((py) / 8)][int((px+4) / 8)] == -1 or myMaze[int((py-5) / 8)][int((px+4) / 8)] == 12:
+        elif dir == Direction.RIGHT and myMaze[int((py) / 8)][int((px+4) / 8)] == -1 or (myMaze[int((py-5) / 8)][int((px+4) / 8)] == 12 and self.State == GhostState.STATE_FRIGHTENED):
             return True
         return False
 
     def UpdateHouseTarget(self):
         px = self.PosX + 12
         py = self.PosY + 12
-        if px / 8 > 11 and py / 8 > 12 and px / 8 < 16 and py / 8 < 16:
+        if px > 90 and py > 105 and px < 135 and py < 125:
             self.Target[0] = 13
             self.Target[1] = 11
-            print("this condition is passed")
 
 
     def Update(self):
@@ -128,7 +162,6 @@ class Ghost:
 
             if round((self.PosX + 12) / 8) == self.Target[0] and round((self.PosY + 12) / 8) == self.Target[1]:
                 self.State = GhostState.STATE_SCATTER
-                print("true????")
 
 
         #
@@ -138,12 +171,11 @@ class Ghost:
             if IsKeyTap(SDL_SCANCODE_A):
                 self.State = GhostState.STATE_FRIGHTENED
             if IsKeyTap(SDL_SCANCODE_D):
-                self.Target[0] += 1
+                self.State = GhostState.STATE_SCATTER
             if IsKeyTap(SDL_SCANCODE_W):
-                self.Target[1] -= 1
+                self.State = GhostState.STATE_CHASE
             if IsKeyTap(SDL_SCANCODE_S):
                 self.Target[1] += 1
-
 
         # 
 
@@ -186,7 +218,7 @@ class Ghost:
                     Distances.pop(Direction.RIGHT)
                 elif self.CurrentDir == Direction.RIGHT:
                     Distances.pop(Direction.LEFT)
-                print(f"popping {stringTrans[self.FormerDir]}")
+                #print(f"popping {stringTrans[self.FormerDir]}")
 
                 DistancesCopy = Distances.copy()
                 # remove directions that lead to walls
@@ -194,9 +226,12 @@ class Ghost:
                 for key in DistancesCopy:
                     i += 1
                     if self.TryDirChange(key) == False:
-                        print(f"can't go {stringTrans[key]}")
+                        #print(f"can't go {stringTrans[key]}")
                         Distances.pop(key)
 
+
+
+                priorityMap = { Direction.UP: 0, Direction.LEFT: 1, Direction.DOWN: 2, Direction.RIGHT: 3 }
                 first = True
                 lowestDist = 0
                 for key in Distances:
@@ -204,13 +239,21 @@ class Ghost:
                         lowestDist = Distances[key]
                         lowestKey = key
                         first = False
+                    elif Distances[key] == lowestDist: # if the distances are equal
+                        # use the priority map to decide
+                        if priorityMap[key] < priorityMap[lowestKey]:
+                            lowestDist = Distances[key]
+                            lowestKey = key
+
+
                 
-                print(f"move should be: {stringTrans[lowestKey]}")
+                #print(f"move should be: {stringTrans[lowestKey]}")
                 self.CurrentDir = lowestKey
-
-
-        
+                
     def Draw(self):
+        if myGameState == GameState.STATE_STARTING:
+            return
+
         if self.Texture == None:
             self.Texture = LoadTexture(b"spook.bmp")
 
@@ -305,9 +348,9 @@ class Pinky(Ghost):
 class Inky(Ghost):
     def __init__(self):
         super().__init__()
-        self.PosX = (10 * 8)
+        self.PosX = (11 * 8)
         self.PosY = 13 * 8
-        self.ScatterTarget[0] = 27
+        self.ScatterTarget[0] = 0
         self.ScatterTarget[1] = 0
 
     def Draw(self):
@@ -402,6 +445,9 @@ class Player:
         self.NumLives = 5
 
     def Draw(self):
+        if myGameState == GameState.STATE_STARTING:
+            return
+
         r = SDL_Rect(self.PosX + 4, self.PosY + 4, 16, 16)
         crop = SDL_Rect(0,0,16,16)
         cropMap = { None: 0, Direction.UP: 0, Direction.DOWN: 16, Direction.LEFT: 32, Direction.RIGHT: 48 }
@@ -421,6 +467,8 @@ class Player:
             self.CurrentFrame += 1
 
     def Update(self):
+        global CurrentScore
+
         if myGameState != GameState.STATE_GAME:
             return
         # center positions for array indexing
@@ -448,8 +496,12 @@ class Player:
         self.bMoving = True
         a = Clamp(int((px+4) / 8), 0, MazeWidth-1)
         b = (px+4) / 8
-        print(f"{a}, {b}")
-        if self.CurrentDir == Direction.RIGHT and myMaze[int((py) / 8)][Clamp(int((px+4) / 8), 0, MazeWidth-1)] == -1:
+#        print(f"{a}, {b}")
+#        if self.CurrentDir == Direction.RIGHT and myMaze[int((py) / 8)][Clamp(int((px+4) / 8), 0, MazeWidth-1)] == -1:
+        aa = int((px+4) / 8)
+        bb = int(((py) / 8))
+#        print(f"indexing: {aa}, {bb}")
+        if self.CurrentDir == Direction.RIGHT and IndexArr(int((py) / 8), int((px+4) / 8)) == -1:
             self.PosX += 1
             if self.PosX / 8 > MazeWidth:
                 self.PosX = -8
@@ -466,12 +518,17 @@ class Player:
             self.bMoving = False
 
         global arr
-        lx = round((self.PosX + 8) / 8)
-        ly = round((self.PosY + 8) / 8)
+        lx = Clamp(round((self.PosX + 8) / 8), 0, MazeWidth)
+        ly = Clamp(round((self.PosY + 8) / 8), 0, MazeHeight)
 #        print(f"{lx}, {ly}")
-#        if arr[ly][lx] != 0:
-#            arr[ly][lx] = 0
-#            Mix_PlayChannel(-1, mySounds["chomp"], 0)
+        if arr[ly][lx] == 1:
+            arr[ly][lx] = 0
+            Mix_PlayChannel(-1, mySounds["chomp"], 0)
+            CurrentScore += 10
+        elif arr[ly][lx] == 2:
+            arr[ly][lx] = 0
+            Mix_PlayChannel(-1, mySounds["chomp"], 0)
+            CurrentScore += 50
 
         for k in myGhosts:
             gX = myGhosts[k].PosX
@@ -510,7 +567,7 @@ def CheckInputs():
     iMouseY = ctypes.c_int()
     SDL_GetMouseState(ctypes.byref(iMouseX), ctypes.byref(iMouseY))
     EditCursorX = round(iMouseX.value / 8)
-    print(f"POS- {EditCursorX}, {EditCursorY}")
+#    print(f"POS- {EditCursorX}, {EditCursorY}")
     EditCursorY = round((iMouseY.value) / 8)
     if myGameState == GameState.STATE_EDIT:
         if IsKeyTap(SDL_SCANCODE_A):
@@ -638,12 +695,13 @@ MazeWidth = 27
 MazeHeight = 30
 arr = x = [[0 for i in range(MazeWidth)] for j in range(MazeHeight)] 
 myMaze = [[0 for i in range(MazeWidth)] for j in range (MazeHeight)]
+CurrentScore = 0
 
-def DrawString(str, x, y):
+def DrawString(str, x, y, r = 255, g = 255, b = 255):
     color = SDL_Color(255,255,255)
-    color.r = 255
-    color.g = 255
-    color.b = 255
+    color.r = r
+    color.g = g
+    color.b = b
     color.a = 255
     surf = TTF_RenderText_Solid(myFont, str, color)
     texture = SDL_CreateTextureFromSurface(myRenderer, surf)
@@ -661,6 +719,8 @@ def DrawString(str, x, y):
 def DrawHud():
     DrawString(b"1UP", 16, 0)
     DrawString(b"HIGH SCORE", 74, 0)
+    score = f"{CurrentScore}"
+    DrawString(bytes(score, "utf-8"), 122, 10)
     DrawString(b"2UP", 176, 0)
 
     for i in range(4):
@@ -703,6 +763,7 @@ def DrawMaze():
 LoadMaze()
 done = False
 
+GhostProgessionTimer = SDL_GetTicks()
 while done == False:
     while SDL_PollEvent(myEvent):
         if myEvent.type == SDL_QUIT:
@@ -746,6 +807,13 @@ while done == False:
             myGhosts[k].Update()
 
     DrawHud()
+
+    if myGameState == GameState.STATE_STARTING:
+        DrawString(b"PLAYER ONE", 73, 112, 19, 249, 248)
+        DrawString(b"READY!", 90, 160, 250, 250, 23)
+
+    SDL_SetRenderDrawColor(myRenderer, 255, 0, 0, 255)
+    SDL_RenderDrawLine(myRenderer, 90, 105 + HUD_HEIGHT, 135, 105 + HUD_HEIGHT)
 
     SDL_RenderPresent(myRenderer)
     
