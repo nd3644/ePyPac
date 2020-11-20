@@ -37,6 +37,19 @@ def LoadTexture(filename):
     SDL_FreeSurface(surf)
     return tex
 
+def FlipDirection(r):
+    newDir = None
+    if r == Direction.LEFT:
+        nerwDir = Direction.RIGHT
+    elif r == Direction.RIGHT:
+        r = Direction.LEFT
+    elif r == Direction.UP:
+        newDir = Direction.DOWN
+    elif r == Direction.DOWN:
+        newDir = Direction.UP
+
+    return newDir
+
 def CalcLinearDist(x1, y1, x2, y2):
     distX = x2 - x1
     distY = y2 - y1
@@ -102,12 +115,22 @@ myFormerKeyStates = [False] * 255
 class GhostState(IntEnum):
     STATE_SCATTER = 0
     STATE_CHASE = 1
-    STATE_FRIGHTENED = 2
-    STATE_INHOUSE = 3
+    STATE_RESPAWNING = 2
+    STATE_FRIGHTENED = 3
+    STATE_INHOUSE = 4
 
 class Ghost:
     def __init__(self):
         self.Reset()
+
+    def Frighten(self):
+        self.State = GhostState.STATE_FRIGHTENED
+#        self.CurrentDir = FlipDirection(self.CurrentDir)
+
+        self.Target[1] = 0
+        self.Target[0] = 0
+
+        self.FrightenTimer = SDL_GetTicks()
 
     def Reset(self):
         self.PosX = 0
@@ -115,8 +138,9 @@ class Ghost:
         self.Name = "Spook"
         self.Texture = None
         self.EyesTex = None
+        self.FrightenedTex = None
         self.Target = [ 5, 5 ]
-        self.ScatterTarget = [ 0, 0 ]
+#        self.ScatterTarget = [ 0, 0 ]
         self.NextTile = [ 1, 0 ]
         self.CurrentDir = Direction.RIGHT
         self.FormerDir = Direction.LEFT
@@ -125,6 +149,7 @@ class Ghost:
         self.DbgMode = True
         self.MoveDelta = 0
         self.State = GhostState.STATE_SCATTER
+        self.FrightenTimer = 0
 
     def TryDirChange(self, dir):
         # The way the ghosts change direction has become a little more complicated that it had to be.
@@ -136,11 +161,11 @@ class Ghost:
         # 12 is the exception for the ghost house- This needs fixing
         if dir == Direction.UP and myMaze[int((py-5) / 8)][int((px) / 8)] == -1 or myMaze[int((py-5) / 8)][int((px) / 8)] == 12:
             return True
-        elif dir == Direction.DOWN and myMaze[int((py+5) / 8)][int((px) / 8)] == -1 or (myMaze[int((py+4) / 8)][int((px) / 8)] == 12 and self.State == GhostState.STATE_FRIGHTENED):
+        elif dir == Direction.DOWN and myMaze[int((py+5) / 8)][int((px) / 8)] == -1 or (myMaze[int((py+4) / 8)][int((px) / 8)] == 12 and self.State == GhostState.STATE_RESPAWNING):
             return True
-        elif dir == Direction.LEFT and myMaze[int((py) / 8)][int((px-5) / 8)] == -1 or (myMaze[int((py) / 8)][int((px-4) / 8)] == 12 and self.State == GhostState.STATE_FRIGHTENED):
+        elif dir == Direction.LEFT and myMaze[int((py) / 8)][int((px-5) / 8)] == -1 or (myMaze[int((py) / 8)][int((px-4) / 8)] == 12 and self.State == GhostState.STATE_RESPAWNING):
             return True
-        elif dir == Direction.RIGHT and myMaze[int((py) / 8)][int((px+4) / 8)] == -1 or (myMaze[int((py-5) / 8)][int((px+4) / 8)] == 12 and self.State == GhostState.STATE_FRIGHTENED):
+        elif dir == Direction.RIGHT and myMaze[int((py) / 8)][int((px+4) / 8)] == -1 or (myMaze[int((py-5) / 8)][int((px+4) / 8)] == 12 and self.State == GhostState.STATE_RESPAWNING):
             return True
         return False
 
@@ -156,7 +181,7 @@ class Ghost:
         if myGameState != GameState.STATE_GAME:
             return
 
-        if self.State == GhostState.STATE_FRIGHTENED:
+        if self.State == GhostState.STATE_RESPAWNING:
             self.Target[0] = 13
             self.Target[1] = 14
 
@@ -169,7 +194,7 @@ class Ghost:
         py = self.PosY + 12
         if IsKeyDown(SDL_SCANCODE_SPACE):
             if IsKeyTap(SDL_SCANCODE_A):
-                self.State = GhostState.STATE_FRIGHTENED
+                self.State = GhostState.STATE_RESPAWNING
             if IsKeyTap(SDL_SCANCODE_D):
                 self.State = GhostState.STATE_SCATTER
             if IsKeyTap(SDL_SCANCODE_W):
@@ -179,15 +204,14 @@ class Ghost:
 
         # 
 
-        UpdateDelta = 20
-        if self.State == GhostState.STATE_FRIGHTENED:
+        UpdateDelta = 15
+        if self.State == GhostState.STATE_RESPAWNING:
             UpdateDelta = 10
             
         if SDL_GetTicks() - self.UpdateTimer < UpdateDelta:
             return
 
         self.UpdateTimer = SDL_GetTicks()
-
         if self.MoveDelta > 0:
             self.MoveDelta -= 1
             # Stuff to update on timeout
@@ -200,55 +224,61 @@ class Ghost:
             elif self.CurrentDir == Direction.DOWN:
                 self.PosY += 1
         else:
+            if self.State == GhostState.STATE_FRIGHTENED:
+                if SDL_GetTicks() - self.FrightenTimer > 1000 * 10:
+                    self.State = GhostState.STATE_CHASE
+
 #            if IsKeyTap(SDL_SCANCODE_RETURN):
-                stringTrans = { Direction.LEFT: "left", Direction.RIGHT: "right", Direction.UP: "up", Direction.DOWN: "down" }
-                self.MoveDelta = 8
+            stringTrans = { Direction.LEFT: "left", Direction.RIGHT: "right", Direction.UP: "up", Direction.DOWN: "down" }
+            self.MoveDelta = 8
+                
 
-                aboveDist = CalcLinearDist(px, py-1, self.Target[0] * 8, self.Target[1] * 8)
-                belowDist = CalcLinearDist(px, py+1, self.Target[0] * 8, self.Target[1] * 8)
-                leftDist = CalcLinearDist(px-1, py, self.Target[0] * 8, self.Target[1] * 8)
-                rightDist = CalcLinearDist(px+1, py, self.Target[0] * 8, self.Target[1] * 8)
+            aboveDist = CalcLinearDist(px, py-1, self.Target[0] * 8, self.Target[1] * 8)
+            belowDist = CalcLinearDist(px, py+1, self.Target[0] * 8, self.Target[1] * 8)
+            leftDist = CalcLinearDist(px-1, py, self.Target[0] * 8, self.Target[1] * 8)
+            rightDist = CalcLinearDist(px+1, py, self.Target[0] * 8, self.Target[1] * 8)
 
-                Distances = { Direction.LEFT: leftDist, Direction.RIGHT: rightDist, Direction.UP: aboveDist, Direction.DOWN: belowDist }
-                if self.CurrentDir == Direction.UP:
-                    Distances.pop(Direction.DOWN)
-                elif self.CurrentDir == Direction.DOWN:
-                    Distances.pop(Direction.UP)
-                elif self.CurrentDir == Direction.LEFT:
-                    Distances.pop(Direction.RIGHT)
-                elif self.CurrentDir == Direction.RIGHT:
-                    Distances.pop(Direction.LEFT)
-                #print(f"popping {stringTrans[self.FormerDir]}")
+            Distances = { Direction.LEFT: leftDist, Direction.RIGHT: rightDist, Direction.UP: aboveDist, Direction.DOWN: belowDist }
+            if self.CurrentDir == Direction.UP:
+                Distances.pop(Direction.DOWN)
+            elif self.CurrentDir == Direction.DOWN:
+                Distances.pop(Direction.UP)
+            elif self.CurrentDir == Direction.LEFT:
+                Distances.pop(Direction.RIGHT)
+            elif self.CurrentDir == Direction.RIGHT:
+                Distances.pop(Direction.LEFT)
+            #print(f"popping {stringTrans[self.FormerDir]}")
 
-                DistancesCopy = Distances.copy()
-                # remove directions that lead to walls
-                i = 0
-                for key in DistancesCopy:
-                    i += 1
-                    if self.TryDirChange(key) == False:
-                        #print(f"can't go {stringTrans[key]}")
-                        Distances.pop(key)
+            DistancesCopy = Distances.copy()
+            # remove directions that lead to walls
+            i = 0
+            for key in DistancesCopy:
+                i += 1
+                if self.TryDirChange(key) == False:
+                    #print(f"can't go {stringTrans[key]}")
+                    Distances.pop(key)
 
 
 
-                priorityMap = { Direction.UP: 0, Direction.LEFT: 1, Direction.DOWN: 2, Direction.RIGHT: 3 }
-                first = True
-                lowestDist = 0
-                for key in Distances:
-                    if Distances[key] < lowestDist or first == True:
+            priorityMap = { Direction.UP: 0, Direction.LEFT: 1, Direction.DOWN: 2, Direction.RIGHT: 3 }
+            first = True
+            lowestDist = 0
+            lowestKey = Direction.UP
+            for key in Distances:
+                if Distances[key] < lowestDist or first == True:
+                    lowestDist = Distances[key]
+                    lowestKey = key
+                    first = False
+                elif Distances[key] == lowestDist: # if the distances are equal
+                    # use the priority map to decide
+                    if priorityMap[key] < priorityMap[lowestKey]:
                         lowestDist = Distances[key]
                         lowestKey = key
-                        first = False
-                    elif Distances[key] == lowestDist: # if the distances are equal
-                        # use the priority map to decide
-                        if priorityMap[key] < priorityMap[lowestKey]:
-                            lowestDist = Distances[key]
-                            lowestKey = key
 
 
-                
-                #print(f"move should be: {stringTrans[lowestKey]}")
-                self.CurrentDir = lowestKey
+            
+            #print(f"move should be: {stringTrans[lowestKey]}")
+            self.CurrentDir = lowestKey
                 
     def Draw(self):
         if myGameState == GameState.STATE_STARTING:
@@ -260,13 +290,22 @@ class Ghost:
         if self.EyesTex == None:
             self.EyesTex = LoadTexture(b"eyes.bmp")
 
+        if self.FrightenedTex == None:
+            self.FrightenedTex = LoadTexture(b"fright.bmp")
+
         cropMap = { None: 0, Direction.UP: 0, Direction.DOWN: 16, Direction.LEFT: 32, Direction.RIGHT: 48 }
         c = SDL_Rect(0,cropMap[self.CurrentDir],16,16)
         r = SDL_Rect(self.PosX + 4, self.PosY + 4, 16,16)
         r.y += HUD_HEIGHT
 
-        if self.State == GhostState.STATE_FRIGHTENED:
+        if self.State == GhostState.STATE_RESPAWNING:
             SDL_RenderCopy(myRenderer, self.EyesTex, c, r)
+        elif self.State == GhostState.STATE_FRIGHTENED:
+            c.x = c.y = 0
+            if SDL_GetTicks() - self.FrightenTimer > 1000 * 7:
+                c.y = random.randint(0, 1) * 16
+
+            SDL_RenderCopy(myRenderer, self.FrightenedTex, c, r)
         else:
             SDL_RenderCopy(myRenderer, self.Texture, c, r)
 
@@ -288,8 +327,6 @@ class Blinky(Ghost):
 
     def Reset(self):
         super().Reset()
-        self.ScatterTarget[0] = 27
-        self.ScatterTarget[1] = 0
         self.PosX = (13 * 8)
         self.PosY = 10 * 8
 
@@ -318,8 +355,6 @@ class Pinky(Ghost):
         super().Reset()
         self.PosX = (13 * 8)
         self.PosY = 13 * 8
-        self.ScatterTarget[0] = 27
-        self.ScatterTarget[1] = 0
 
     def Draw(self):
         if self.Texture == None:
@@ -350,9 +385,7 @@ class Inky(Ghost):
         super().__init__()
         self.PosX = (11 * 8)
         self.PosY = 13 * 8
-        self.ScatterTarget[0] = 0
-        self.ScatterTarget[1] = 0
-
+        
     def Draw(self):
         if self.Texture == None:
             self.Texture = LoadTexture(b"inky.bmp")
@@ -396,8 +429,6 @@ class Clyde(Ghost):
         super().Reset()
         self.PosX = (15 * 8)
         self.PosY = 13 * 8
-        self.ScatterTarget[0] = 27
-        self.ScatterTarget[1] = 0
 
     def Draw(self):
         if self.Texture == None:
@@ -529,13 +560,18 @@ class Player:
             arr[ly][lx] = 0
             Mix_PlayChannel(-1, mySounds["chomp"], 0)
             CurrentScore += 50
+            for k in myGhosts:
+                myGhosts[k].Frighten()
 
         for k in myGhosts:
             gX = myGhosts[k].PosX
             gY = myGhosts[k].PosY
 
             if self.PosX + 16 > gX and self.PosX < gX + 16 and self.PosY + 16 > gY and self.PosY < gY + 16:
-                ResetGame()
+                if myGhosts[k].State == GhostState.STATE_FRIGHTENED:
+                    myGhosts[k].State = GhostState.STATE_RESPAWNING
+                elif myGhosts[k].State != GhostState.STATE_RESPAWNING:
+                    ResetGame()
 
 myPlayer = Player()
 
@@ -780,7 +816,7 @@ while done == False:
 
     if IsKeyTap(SDL_SCANCODE_SPACE):
         myGameState = GameState.STATE_STARTING
-#        Mix_PlayMusic(mySounds["start"], 0)
+        Mix_PlayMusic(mySounds["start"], 0)
 
     if myGameState == GameState.STATE_STARTING and Mix_PlayingMusic() == False:
         myGameState = GameState.STATE_GAME
