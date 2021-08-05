@@ -224,6 +224,8 @@ class Ghost:
             elif self.CurrentDir == Direction.DOWN:
                 self.PosY += 1
         else:
+            self.PosX = round(int(self.PosX) / 8) * 8
+            self.PosY = round(int(self.PosY) / 8) * 8
             if self.State == GhostState.STATE_FRIGHTENED:
                 if SDL_GetTicks() - self.FrightenTimer > 1000 * 10:
                     self.State = GhostState.STATE_CHASE
@@ -602,9 +604,9 @@ def CheckInputs():
     iMouseX = ctypes.c_int()
     iMouseY = ctypes.c_int()
     SDL_GetMouseState(ctypes.byref(iMouseX), ctypes.byref(iMouseY))
-    EditCursorX = round(iMouseX.value / 8)
+#    EditCursorX = round(iMouseX.value / 8)
 #    print(f"POS- {EditCursorX}, {EditCursorY}")
-    EditCursorY = round((iMouseY.value) / 8)
+#    EditCursorY = round((iMouseY.value) / 8)
     if myGameState == GameState.STATE_EDIT:
         if IsKeyTap(SDL_SCANCODE_A):
             EditCursorX -= 1
@@ -642,7 +644,7 @@ def CheckInputs():
 
         if IsKeyDown(SDL_SCANCODE_H):
             if myMaze[EditCursorY][EditCursorX] == -1:
-                arr[EditCursorY][EditCursorX] = 1
+                arr[EditCursorY][EditCursorX] = 2
                 print(f"as- {EditCursorX}, {EditCursorY}")
 
         if IsKeyDown(SDL_SCANCODE_J):
