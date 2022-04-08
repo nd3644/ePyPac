@@ -622,6 +622,7 @@ def CheckInputs():
 
         if IsKeyTap(SDL_SCANCODE_8):
             SaveMaze()
+            print("saved maze!")
 
         if IsKeyTap(SDL_SCANCODE_9):
             LoadMaze()
